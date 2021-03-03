@@ -1,0 +1,40 @@
+--------------------------------------------------------------------------
+-- Copyright (c) 2015-2016, 2019 ETH Zurich.
+-- All rights reserved.
+--
+-- This file is distributed under the terms in the attached LICENSE file.
+-- If you do not find this file, copies can be found by writing to:
+-- ETH Zurich D-INFK, Universitaetstrasse 6, CH-8092 Zurich. Attn: Systems Group.
+--
+-- Hakefile for /platforms/
+--
+--------------------------------------------------------------------------
+
+  [
+    --
+    -- Rules to build assorted platforms
+    --
+    platform "AOS_M0" [ "armv8" ]
+    [ ("root", "/armv8_aos_m0_image.efi") ]
+    "AOS Milestone 0 Image",
+    --
+    -- Rules to build assorted boot images
+    --
+    armv8Image "armv8_aos_m0" "armv8_aos_m0" "armv8_generic" "aos_m0" [] [],
+
+    --
+    -- Booting: various targets for booting Barrelfish under different circumstances
+    --
+
+    -- Copy menu.list files across
+    Rules [ copyFile SrcTree "root" ("/hake/menu.lst." ++ p)
+                     "root" ("/platforms/arm/menu.lst." ++ p)
+            | p <- [ "armv8_aos_m0" ]],
+
+    boot "usbboot_aos_m0" [ "armv8" ] [
+      In SrcTree "tools" "/tools/imx8x/bf-boot.sh",
+      Str "--bf",
+      In BuildTree "root" "/armv8_aos_m0_image.efi"
+    ]
+    "Boot AOS M0 on a Colibri board, over a local USB cable"
+  ]

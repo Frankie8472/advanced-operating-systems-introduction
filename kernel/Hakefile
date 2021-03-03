@@ -1,0 +1,127 @@
+--------------------------------------------------------------------------
+-- Copyright (c) 2007-2016, ETH Zurich.
+-- Copyright (c) 2015-2016, Hewlett Packard Enterprise Development LP.
+-- All rights reserved.
+--
+-- This file is distributed under the terms in the attached LICENSE file.
+-- If you do not find this file, copies can be found by writing to:
+-- ETH Zurich D-INFK, CAB F.78, Universitaetstrasse 6, CH-8092 Zurich.
+-- Attn: Systems Group.
+--
+-- Hakefile for Barrelfish CPU drivers
+--
+--------------------------------------------------------------------------
+
+--
+-- Missing from this new Hakefile is the rule to build kernel debug
+-- symbols, since this requires some thinking about naming
+-- conventions.  Here is the rule we need:
+--
+--                Rule ( [ Str "OBJDUMP=objdump",
+--                         In SrcTree "src" "/tools/gen-gdbscript.sh",
+--                         In SrcTree "src" "/tools/debug.gdb.in",
+--                         In BuildTree arch "../sbin/cpu",
+--                         Str ">", Out arch "/debug.gdb"
+--                        ] )
+
+let
+  scheduler = case Config.scheduler of
+      Config.RR   -> "schedule_rr.c"
+      Config.RBED -> "schedule_rbed.c"
+  common_c = [
+      "logging.c",
+      "memset.c",
+      "printf.c",
+      "stdlib.c",
+      "string.c"
+    ]
+  common_libs = [ "getopt" ]
+
+  link_cpudriver arg = linkKernel opts name objs libs "cpu"
+    where
+      opts = kernelOptions $ head $ Args.architectures arg
+      suffix = if "cpu" == Args.target arg
+             then ""
+             else "_" ++ (Args.target arg)
+      name = "cpu" ++ suffix
+      objs = [ objectFilePath opts f
+             | f <- (Args.assemblyFiles arg) ++ (Args.cFiles arg) ++ common_c ]
+      libs = (Args.addLibraries arg) ++ common_libs
+
+  link_bootdriver arg = linkKernel opts name objs libs "boot"
+    where
+      opts = kernelOptions $ head $ Args.architectures arg
+      name = "boot_" ++ Args.target arg
+      objs = [ objectFilePath opts f
+             | f <- (Args.assemblyFiles arg) ++ (Args.cFiles arg) ]
+      libs = (Args.addLibraries arg) ++ common_libs
+
+  cpudrivers arglist =
+    let
+      cafiles = Data.List.nub $ concat [ [ [ arch, cfile ]
+                                         | arch <- Args.architectures arg,
+                                           cfile <- common_c ++ (Args.cFiles arg) ]
+                                       | arg <- arglist ]
+      safiles = Data.List.nub $ concat [ [ [ arch, sfile ]
+                                         | arch <- Args.architectures arg,
+                                           sfile <- Args.assemblyFiles arg ]
+                                       | arg <- arglist ]
+      mafiles = Data.List.nub $ concat [ [ [ arch, mfile ]
+                                         | arch <- Args.architectures arg,
+                                           mfile <- Args.mackerelDevices arg ]
+                                       | arg <- arglist ]
+    in
+     ( [ compileCFile (kernelOptions a) f | [a,f] <- cafiles ]
+       ++
+       [ assembleSFile (kernelOptions a) f | [a,f] <- safiles ]
+       ++
+       [ mackerelDependencies (kernelOptions a) f [ c | [a,c] <- cafiles]
+       | [a,f] <- mafiles ]
+       ++
+       [ if Args.driverType arg == "boot"
+            then link_bootdriver arg
+            else link_cpudriver arg | arg <- arglist ]
+     )
+
+in cpudrivers [
+  --
+  -- ARMv8 Generic boot driver
+  --
+  bootDriver {
+    target = "armv8_generic",
+    architectures = [ "armv8" ],
+    assemblyFiles = [  "arch/armv8/boot/boot_entry.S" ],
+    cFiles = [  "arch/armv8/boot/boot_generic.c" ],
+    mackerelDevices = [ "armv8" ]
+  },
+
+  --
+  -- AOS Milestone 0
+  --
+  cpuDriver {
+    target = "aos_m0",
+    architectures = [ "armv8" ],
+    assemblyFiles = [
+        "arch/armv8/exceptions.S"
+    ],
+    cFiles = [
+        "arch/arm/misc.c",
+        "arch/arm/kputchar.c",
+        "arch/arm/gdb_arch.c",
+        "arch/armv8/plat_imx8x.c",
+        "arch/armv8/init.c",
+        "arch/armv8/gdb_arch.c",
+        "arch/armv8/kernel_multiboot2.c",
+        "arch/armv8/exn.c",
+        "arch/armv8/aos_m0.c"
+    ],
+    mackerelDevices = [
+        "arm",
+        "armv8",
+        "armv8/armv8_cache_ctrl",
+        "lpuart",
+        "imx8x/imx8x_gpio"
+    ],
+    addLibraries = [ ]
+  }
+]
