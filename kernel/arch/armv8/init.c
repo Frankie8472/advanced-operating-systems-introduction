@@ -173,6 +173,8 @@ arch_init(struct armv8_core_data *core_data) {
 
     MSG("Welcome to AOS!\n");
 
+    //aos_serial_getchar();
+
     aos_blink_led();
 
     while (1) {
