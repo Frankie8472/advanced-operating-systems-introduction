@@ -15,6 +15,17 @@ errval_t mm_init(struct mm *mm, enum objtype objtype,
                      slot_refill_t slot_refill_func,
                      void *slot_alloc_inst)
 {
+    if(mm == NULL){
+        // return ERROR
+    }
+    mm->head = ;
+    mm->slabs = ;
+    mm->objtype = objtype;
+    mm->slot_refill = slot_refill_func;
+    mm->slot_alloc = slot_alloc_func;
+    mm->slot_alloc_inst = slot_alloc_inst;
+
+
     return LIB_ERR_NOT_IMPLEMENTED;
 }
 
@@ -25,6 +36,10 @@ void mm_destroy(struct mm *mm)
 
 errval_t mm_add(struct mm *mm, struct capref cap, genpaddr_t base, size_t size)
 {
+    if (mm->head == NULL){
+        mm->head = (struct mmnode*) base;
+        mm->head
+    }
     return LIB_ERR_NOT_IMPLEMENTED;
 }
 
@@ -43,5 +58,4 @@ errval_t mm_alloc(struct mm *mm, size_t size, struct capref *retcap)
 errval_t mm_free(struct mm *mm, struct capref cap, genpaddr_t base, gensize_t size)
 {
     return LIB_ERR_NOT_IMPLEMENTED;
-
 }
