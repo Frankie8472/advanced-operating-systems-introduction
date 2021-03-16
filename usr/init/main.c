@@ -52,7 +52,33 @@ bsp_main(int argc, char *argv[]) {
     }
 
     // TODO: initialize mem allocator, vspace management here
-    
+
+    debug_printf("\n== START Testing ==\n");
+    struct capref cap[1024];
+    for (int i= 0; i < 1024; i++) {
+        ram_alloc_aligned(&cap[i], 4096, 1);
+    }
+
+/*
+    for (int i = 0; i < 256; i+=42) {
+        aos_ram_free(cap[i]);
+        aos_ram_free(cap[i+1]);
+        aos_ram_free(cap[i+2]);
+    }
+
+    struct capref frame;
+    size_t size;
+    frame_alloc(&frame, 4096, &size);
+    lvaddr_t addr = VADDR_OFFSET + 0x200000;
+    paging_map_fixed_attr(get_current_paging_state(), addr, frame, 4096, 0);
+
+    int64_t * var = (int64_t *) addr;
+
+    for (int i = 0; i < 512; i++) {
+        var[i] = 42; // 512 int64
+    }*/
+    debug_printf("\n== END Testing ==\n");
+
     // Grading 
     grading_test_early();
 

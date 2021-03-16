@@ -93,6 +93,7 @@ void *slab_alloc(struct slab_allocator *slabs)
     if (sh == NULL) {
         /* out of memory. try refill function if we have one */
         if (!slabs->refill_func) {
+            debug_printf("\n NO REFILL FUNC \n");
             return NULL;
         } else {
             err = slabs->refill_func(slabs);
@@ -179,7 +180,29 @@ size_t slab_freecount(struct slab_allocator *slabs)
  */
 static errval_t slab_refill_pages(struct slab_allocator *slabs, size_t bytes)
 {
-    return LIB_ERR_NOT_IMPLEMENTED;
+    // frame_alloc, paging_map_fixed_attr, slab_grow
+    // slab_grow(slab_allocator, buf*, buflen);
+    // frame_alloc(dest*, bytes_size, retbytes*);
+    // paging_map_fixed_attr(*st, vaddr, capref frame, size_t bytes, int flags);
+    errval_t err;
+    struct capref frame;
+    static lvaddr_t vaddr = (VADDR_OFFSET + 0x42000);
+
+    err = frame_alloc(&frame, bytes, &bytes);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "slab_refill_pages: frame_alloc fail");
+        return err;
+    }
+
+    err = paging_map_fixed_attr(get_current_paging_state(), vaddr, frame, bytes, VREGION_FLAGS_READ_WRITE);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "slab_refill_pages: paging_map_fixed_attr fail");
+        return err;
+    }
+
+    slab_grow(slabs, (void *) vaddr, bytes);
+    vaddr = vaddr + 0x1000;
+    return SYS_ERR_OK;
 }
 
 /**
