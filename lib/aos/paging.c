@@ -345,8 +345,6 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
             DEBUG_ERR(err, "paging_map_fixed_attr: pt_alloc_l3 fail");
             return err;
         }
-
-        init = true;
     }
 
     // Map
@@ -375,24 +373,26 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
         return err;
     }
 
-    err = vnode_map(pt_l0, pt_l1, lv0idx, flags, 0, 1, map_l0);
-    debug_printf("\nlv0idx:%d   flags:%d\n", lv0idx, flags);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "paging_map_fixed_attr: vnode_map of lv0idx fail");
-        debug_printf("\nlv0idx:%d   flags:%d\n", lv0idx, flags);
-        return err;
-    }
+    if (!init) {
+        err = vnode_map(pt_l0, pt_l1, lv0idx, flags, 0, 1, map_l0);
+        if (err_is_fail(err)) {
+            DEBUG_ERR(err, "paging_map_fixed_attr: vnode_map of lv0idx fail");
+            debug_printf("\nlv0idx:%d   flags:%d\n", lv0idx, flags);
+            return err;
+        }
 
-    err = vnode_map(pt_l1, pt_l2, lv1idx, flags, 0, 1, map_l1);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "paging_map_fixed_attr: vnode_map of lv1idx fail");
-        return err;
-    }
+        err = vnode_map(pt_l1, pt_l2, lv1idx, flags, 0, 1, map_l1);
+        if (err_is_fail(err)) {
+            DEBUG_ERR(err, "paging_map_fixed_attr: vnode_map of lv1idx fail");
+            return err;
+        }
 
-    err = vnode_map(pt_l2, pt_l3, lv2idx, flags, 0, 1, map_l2);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "paging_map_fixed_attr: vnode_map of lv2idx fail");
-        return err;
+        err = vnode_map(pt_l2, pt_l3, lv2idx, flags, 0, 1, map_l2);
+        if (err_is_fail(err)) {
+            DEBUG_ERR(err, "paging_map_fixed_attr: vnode_map of lv2idx fail");
+            return err;
+        }
+        init = true;
     }
 
     err = vnode_map(pt_l3, frame, lv3idx, flags, 0, 1, map_l3);

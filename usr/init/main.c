@@ -59,7 +59,7 @@ bsp_main(int argc, char *argv[]) {
         ram_alloc_aligned(&cap[i], 4096, 1);
     }
 
-/*
+
     for (int i = 0; i < 256; i+=42) {
         aos_ram_free(cap[i]);
         aos_ram_free(cap[i+1]);
@@ -69,14 +69,14 @@ bsp_main(int argc, char *argv[]) {
     struct capref frame;
     size_t size;
     frame_alloc(&frame, 4096, &size);
-    lvaddr_t addr = VADDR_OFFSET + 0x200000;
-    paging_map_fixed_attr(get_current_paging_state(), addr, frame, 4096, 0);
+    lvaddr_t addr = VADDR_OFFSET + 0x100000;
+    paging_map_fixed_attr(get_current_paging_state(), addr, frame, 4096, VREGION_FLAGS_READ_WRITE);
 
     int64_t * var = (int64_t *) addr;
 
     for (int i = 0; i < 512; i++) {
         var[i] = 42; // 512 int64
-    }*/
+    }
     debug_printf("\n== END Testing ==\n");
 
     // Grading 

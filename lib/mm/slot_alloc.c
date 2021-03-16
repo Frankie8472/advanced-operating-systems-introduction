@@ -85,10 +85,16 @@ out:
 
 errval_t slot_alloc_prealloc(void *inst, uint64_t nslots, struct capref *ret)
 {
+    static bool init = true;
     struct slot_prealloc *this = inst;
     assert(nslots < L2_CNODE_SLOTS);
 
     /* Check if enough space */
+    if (init) {
+        slot_prealloc_refill(this);
+        init = false;
+    }
+
     if (this->meta[this->current].free < nslots) {
         /*
         debug_printf("slot_prealloc: switching cnodes %d->%d\n",
@@ -96,6 +102,7 @@ errval_t slot_alloc_prealloc(void *inst, uint64_t nslots, struct capref *ret)
         */
         // Allocate from next cnode
         this->current = !this->current;
+        slot_prealloc_refill(this);
     }
 
     if (this->meta[this->current].free < nslots) {
