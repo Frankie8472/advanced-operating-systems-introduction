@@ -108,7 +108,7 @@ static void test(void) {
 
     debug_printf(">> Assign one VA to one frame: OK \n");
 
-    l = 1000; // No returns on > 30, investigate!
+    l = 100; // No returns on > 30, investigate!
     struct capref frames[l];
     for (int i = 0; i < l; i++) {
         frame_alloc(&frames[i], 4096, &size);
