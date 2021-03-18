@@ -33,10 +33,61 @@ struct bootinfo *bi;
 coreid_t my_core_id;
 
 
+static void test(void) {
+    debug_printf("== START Testing ==\n");
+    size_t l = 60;
+    struct capref cap[l];
+
+    debug_printf("== Test Start: Allocate capabilities + freeing ==\n");
+    for (int i= 0; i < l; i++) {
+        debug_printf("== %d\n", i);
+        ram_alloc_aligned(&cap[i], 4096, 1);
+    }
+
+    for (int i= 0; i < l; i++) {
+        debug_printf("== %d\n", i);
+        aos_ram_free(cap[i]);
+    }
+
+    debug_printf("== Test End: Allocate capabilities + freeing ==\n");
+    debug_printf("== Test Start: Re-Allocate capabilities + freeing fusion ==\n");
+
+    for (int i= 0; i < l; i++) {
+        ram_alloc_aligned(&cap[i], 4096, 1);
+    }
+
+    for (int i = 0; i < 256; i+=42) {
+        aos_ram_free(cap[i]);
+        aos_ram_free(cap[i+1]);
+        aos_ram_free(cap[i+2]);
+    }
+
+    debug_printf("== Test End: Re-Allocate capabilities + freeing fusion ==\n");
+    debug_printf("== Test Start: Frame allocation to do some math! ==\n");
+
+    struct capref frame;
+    size_t size;
+    frame_alloc(&frame, 4096, &size);
+    lvaddr_t addr = VADDR_OFFSET + 0x100000;
+    paging_map_fixed_attr(get_current_paging_state(), addr, frame, 4096, VREGION_FLAGS_READ_WRITE);
+
+    int64_t * var = (int64_t *) addr;
+
+    for (int i = 0; i < 512; i++) {
+        var[i] = 42; // 512 int64
+    }
+
+    for (int i = 0; i < 512; i+=2) {
+        var[i] += var[i+1]; // 512 int64
+    }
+    debug_printf("== Test End: Frame allocation to do some math! ==\n");
+    debug_printf("== END Testing ==\n");
+}
 
 
 static int
-bsp_main(int argc, char *argv[]) {
+bsp_main(int argc, char *argv[])
+{
     errval_t err;
 
     // Grading 
@@ -53,31 +104,7 @@ bsp_main(int argc, char *argv[]) {
 
     // TODO: initialize mem allocator, vspace management here
 
-    debug_printf("\n== START Testing ==\n");
-    struct capref cap[1024];
-    for (int i= 0; i < 1024; i++) {
-        ram_alloc_aligned(&cap[i], 4096, 1);
-    }
-
-
-    for (int i = 0; i < 256; i+=42) {
-        aos_ram_free(cap[i]);
-        aos_ram_free(cap[i+1]);
-        aos_ram_free(cap[i+2]);
-    }
-
-    struct capref frame;
-    size_t size;
-    frame_alloc(&frame, 4096, &size);
-    lvaddr_t addr = VADDR_OFFSET + 0x100000;
-    paging_map_fixed_attr(get_current_paging_state(), addr, frame, 4096, VREGION_FLAGS_READ_WRITE);
-
-    int64_t * var = (int64_t *) addr;
-
-    for (int i = 0; i < 512; i++) {
-        var[i] = 42; // 512 int64
-    }
-    debug_printf("\n== END Testing ==\n");
+    test();
 
     // Grading 
     grading_test_early();

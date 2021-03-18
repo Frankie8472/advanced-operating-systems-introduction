@@ -86,6 +86,16 @@ void slab_grow(struct slab_allocator *slabs, void *buf, size_t buflen)
 void *slab_alloc(struct slab_allocator *slabs)
 {
     errval_t err;
+    /* refill if needed */
+    size_t free_cnt_old = slab_freecount(slabs);
+    if (free_cnt_old < 7) {
+        err = slab_default_refill(slabs);
+        if (err_is_fail(err)) {
+            DEBUG_ERR(err, "slab.c/slab_alloc: slab refill_func failed");
+            return NULL;
+        }
+    }
+
     /* find a slab with free blocks */
     struct slab_head *sh;
     for (sh = slabs->slabs; sh != NULL && sh->free == 0; sh = sh->next);
@@ -180,29 +190,36 @@ size_t slab_freecount(struct slab_allocator *slabs)
  */
 static errval_t slab_refill_pages(struct slab_allocator *slabs, size_t bytes)
 {
-    // frame_alloc, paging_map_fixed_attr, slab_grow
-    // slab_grow(slab_allocator, buf*, buflen);
-    // frame_alloc(dest*, bytes_size, retbytes*);
-    // paging_map_fixed_attr(*st, vaddr, capref frame, size_t bytes, int flags);
-    errval_t err;
+    errval_t err = SYS_ERR_OK;
+    static bool is_refilling = false;
+
+    if (is_refilling) {
+        return err;
+    }
+
+    is_refilling = true;
+
     struct capref frame;
-    static lvaddr_t vaddr = (VADDR_OFFSET + 0x42000);
+    static lvaddr_t vaddr = (VADDR_OFFSET + 0x42000);   // Arbitrary address
 
     err = frame_alloc(&frame, bytes, &bytes);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "slab_refill_pages: frame_alloc fail");
-        return err;
+        DEBUG_ERR(err, "slab.c/slab_refill_pages: frame_alloc fail");
+        goto out;
     }
 
     err = paging_map_fixed_attr(get_current_paging_state(), vaddr, frame, bytes, VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "slab_refill_pages: paging_map_fixed_attr fail");
-        return err;
+        DEBUG_ERR(err, "slab.c/slab_refill_pages: paging_map_fixed_attr fail");
+        goto out;
     }
 
     slab_grow(slabs, (void *) vaddr, bytes);
-    vaddr = vaddr + 0x1000;
-    return SYS_ERR_OK;
+    vaddr += 0x1000;     // Next entry in pt_l3
+
+out:
+    is_refilling = false;
+    return err;
 }
 
 /**

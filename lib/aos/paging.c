@@ -292,116 +292,64 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
      * TODO(M2): General case
      */
 
-    // 4 level page table in armv8, alli werded idi glich last level gmapped
-    // --> instantiate all levels, ObjType_VNode_AARCH64_l1, ObjType_VNode_AARCH64_l2, ObjType_VNode_AARCH64_l3
-    // --> put all in last level
-    // paging_region_init
-    // vnode_map
-    // paging_state
-    // slot für capability mun alloziiert werde dur paging_state
-    // gischem e cap (frame) und du wotsch zu dere virtuelle adresse zueordne
-    // wivil byte du wotsch mappe, flags chasch witergeh
-    // 1. 16 all null  negschte 4 9 lvl 0123 und di letschte 12 egal
-    // TODO: err correcting
-
-
-    // TODO: Move to init
+    // TODO: move to init? probably not, look for the call sequence!
+    //       when is slot_allocator init called?
     if (st->slot_alloc == NULL) {
         st->slot_alloc = get_default_slot_allocator();
     }
 
-    static bool init = false;
-    errval_t err;
+    static bool init = true;
+    errval_t err = SYS_ERR_OK;
 
     // Get index
-    capaddr_t lv0idx, lv1idx, lv2idx, lv3idx;
-    lv0idx = (capaddr_t)((vaddr >> 39) & 0x1ff);
-    lv1idx = (capaddr_t)((vaddr >> 30) & 0x1ff);
-    lv2idx = (capaddr_t)((vaddr >> 21) & 0x1ff);
-    lv3idx = (capaddr_t)((vaddr >> 12) & 0x1ff);
-
-    // Get pt level 0-3 capabilities
-    struct capref pt_l0 = { // 512 entries
-            .cnode = cnode_page,
-            .slot  = 0
-    };
-
-    static struct capref pt_l1, pt_l2, pt_l3;
-    if (!init) {
-        err = pt_alloc_l1(st, &pt_l1);
-        if (err_is_fail(err)) {
-            DEBUG_ERR(err, "paging_map_fixed_attr: pt_alloc_l1 fail");
-            return err;
-        }
-
-        err = pt_alloc_l2(st, &pt_l2);
-        if (err_is_fail(err)) {
-            DEBUG_ERR(err, "paging_map_fixed_attr: pt_alloc_l2 fail");
-            return err;
-        }
-
-        err = pt_alloc_l3(st, &pt_l3);
-        if (err_is_fail(err)) {
-            DEBUG_ERR(err, "paging_map_fixed_attr: pt_alloc_l3 fail");
-            return err;
-        }
+    capaddr_t lvidx[4];
+    for (int i = 0; i < 4; i++) {
+        lvidx[i] = (capaddr_t)((vaddr >> (39-9*i)) & 0x1ff);
     }
 
     // Map
-    struct capref map_l0, map_l1, map_l2, map_l3;
-    err = slot_alloc(&map_l0);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "paging_map_fixed_attr: slot_alloc of map_l0 fail");
-        return err;
-    }
-
-    err = slot_alloc(&map_l1);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "paging_map_fixed_attr: slot_alloc of map_l1 fail");
-        return err;
-    }
-
-    err = slot_alloc(&map_l2);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "paging_map_fixed_attr: slot_alloc of map_l2 fail");
-        return err;
-    }
-
-    err = slot_alloc(&map_l3);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "paging_map_fixed_attr: slot_alloc of map_l3 fail");
-        return err;
-    }
-
-    if (!init) {
-        err = vnode_map(pt_l0, pt_l1, lv0idx, flags, 0, 1, map_l0);
+    struct capref map_l[4];
+    for (int i = 0; i < 4; i++){
+        err = slot_alloc(&map_l[i]);
         if (err_is_fail(err)) {
-            DEBUG_ERR(err, "paging_map_fixed_attr: vnode_map of lv0idx fail");
-            debug_printf("\nlv0idx:%d   flags:%d\n", lv0idx, flags);
+            DEBUG_ERR(err, "paging.c/paging_map_fixed_attr: slot_alloc of map_l%d fail", i);
             return err;
         }
-
-        err = vnode_map(pt_l1, pt_l2, lv1idx, flags, 0, 1, map_l1);
-        if (err_is_fail(err)) {
-            DEBUG_ERR(err, "paging_map_fixed_attr: vnode_map of lv1idx fail");
-            return err;
-        }
-
-        err = vnode_map(pt_l2, pt_l3, lv2idx, flags, 0, 1, map_l2);
-        if (err_is_fail(err)) {
-            DEBUG_ERR(err, "paging_map_fixed_attr: vnode_map of lv2idx fail");
-            return err;
-        }
-        init = true;
     }
 
-    err = vnode_map(pt_l3, frame, lv3idx, flags, 0, 1, map_l3);
+    // Get pt level 0-3 capabilities
+    static struct capref pt_l[4];
+    errval_t (*pt_alloc_l[3])(struct paging_state * st, struct capref *ret) = {&pt_alloc_l1, &pt_alloc_l2, &pt_alloc_l3};
+
+    if (init) {
+        pt_l[0] = (struct capref) { // 512 entries
+                .cnode = cnode_page,
+                .slot  = 0
+        };
+
+        for (int i = 1; i < 4; i++) {
+            err = pt_alloc_l[i-1](st, &pt_l[i]);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "paging.c/paging_map_fixed_attr: pt_alloc_l%d fail", i);
+                return err;
+            }
+            err = vnode_map(pt_l[i-1], pt_l[i], lvidx[i-1], flags, 0, 1, map_l[i-1]);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "paging.c/paging_map_fixed_attr: vnode_map of lv%didx fail", i-1);
+                return err_push(err, LIB_ERR_VNODE_MAP);
+            }
+
+        }
+        init = false;
+    }
+
+    err = vnode_map(pt_l[3], frame, lvidx[3], flags, 0, 1, map_l[3]);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "paging_map_fixed_attr: vnode_map of lv3idx fail");
-        return err;
+        DEBUG_ERR(err, "paging_map_fixed_attr: vnode_map of lv%didx fail", 3);
+        return err_push(err, LIB_ERR_VNODE_MAP);
     }
 
-    return SYS_ERR_OK;
+    return err;
 }
 
 /**

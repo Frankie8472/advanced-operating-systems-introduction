@@ -8,6 +8,27 @@
 #include <aos/solution.h>
 
 /**
+ * \brief Helper function:
+ *        Splits an mmnode_left into two and returns the left block in mmnode_left
+ *
+ * \param mm Pointer to MM allocator instance data
+ * \param mmnode_left Pointer to the mmnode_left to split
+ * \param size The size of the first block of the split
+ */
+static void mmnode_split(struct mmnode *mmnode_left, struct mmnode *mmnode_right, gensize_t size)
+{
+    mmnode_right->type = mmnode_left->type;
+    mmnode_right->cap = mmnode_left->cap;
+    mmnode_right->prev = mmnode_left;
+    mmnode_right->next = mmnode_left->next;
+    mmnode_right->base = mmnode_left->base + size;
+    mmnode_right->size = mmnode_left->size - size;
+
+    mmnode_left->size = size;
+    mmnode_left->next = mmnode_right;
+}
+
+/**
  * \brief Initializes an mmnode to the given MM allocator instance data
  *
  * \param mm Pointer to MM allocator instance data
@@ -23,6 +44,11 @@ errval_t mm_init(struct mm *mm, enum objtype objtype,
                      slot_refill_t slot_refill_func,
                      void *slot_alloc_inst)
 {
+    if (mm == NULL) {
+        DEBUG_ERR(MM_ERR_NOT_FOUND, "mm.c/mm_init: mm is null");
+        return MM_ERR_NOT_FOUND;
+    }
+
     slab_init(&(mm->slabs), sizeof(struct mmnode), slab_refill_func);
     mm->slot_alloc = slot_alloc_func;
     mm->slot_refill = slot_refill_func;
@@ -40,14 +66,30 @@ errval_t mm_init(struct mm *mm, enum objtype objtype,
  */
 void mm_destroy(struct mm *mm)
 {
-    struct mmnode *cm, *tm;
-    for (cm = mm->head; cm != NULL; cm = tm) {
-        for (tm = cm->next; tm != NULL && capcmp(cm->cap.cap, tm->cap.cap); tm = cm->next) {
-            cm->next = tm->next;
-            slab_free(&(mm->slabs), tm);
+    errval_t err;
+    if (mm == NULL) {
+        DEBUG_ERR(MM_ERR_NOT_FOUND, "mm.c/mm_destroy: mm is null");
+        return;
+    }
+
+    struct mmnode *cm, *nm;
+    for (cm = mm->head; cm != NULL; cm = nm) {
+        for (nm = cm->next; nm != NULL && capcmp(cm->cap.cap, nm->cap.cap); nm = cm->next) {
+            cm->next = nm->next;
+            slab_free(&(mm->slabs), nm);
         }
-        cap_revoke(cm->cap.cap);
-        cap_destroy(cm->cap.cap);
+        err = cap_revoke(cm->cap.cap);
+        if (err) {
+            DEBUG_ERR(LIB_ERR_REMOTE_REVOKE, "mm.c/mm_destroy: cap_revoke error");
+            return;
+        }
+
+        err = cap_destroy(cm->cap.cap);
+        if (err) {
+            DEBUG_ERR(LIB_ERR_CAP_DESTROY, "mm.c/mm_destroy: cap_destroy error");
+            return;
+        }
+
         slab_free(&(mm->slabs), cm);
     }
 }
@@ -63,17 +105,15 @@ void mm_destroy(struct mm *mm)
 errval_t mm_add(struct mm *mm, struct capref cap, genpaddr_t base, size_t size)
 {
     if (mm == NULL) {
-        return MM_ERR_MM_ADD;
+        DEBUG_ERR(MM_ERR_NOT_FOUND, "mm.c/mm_add: mm is null");
+        return MM_ERR_NOT_FOUND;
     }
 
-    struct capinfo capinfo_new;
-    capinfo_new.cap = cap;
-    capinfo_new.base = base;
-    capinfo_new.size = (genpaddr_t) size;
-
-    if (slab_freecount(&(mm->slabs)) < 2) {
-        slab_default_refill(&(mm->slabs));
-    }
+    struct capinfo capinfo_new = {
+        .cap = cap,
+        .base = base,
+        .size = (genpaddr_t) size
+    };
 
     struct mmnode* mmnode_new = slab_alloc(&(mm->slabs));
     mmnode_new->type = NodeType_Free;
@@ -81,7 +121,7 @@ errval_t mm_add(struct mm *mm, struct capref cap, genpaddr_t base, size_t size)
     mmnode_new->prev = NULL;
     mmnode_new->next = NULL;
     mmnode_new->base = base;
-    mmnode_new->size = (gensize_t) size; // Control type
+    mmnode_new->size = (gensize_t) size;
 
     if (mm->head == NULL) {
         mm->head = mmnode_new;
@@ -103,57 +143,75 @@ errval_t mm_add(struct mm *mm, struct capref cap, genpaddr_t base, size_t size)
  */
 errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment, struct capref *retcap)
 {
+    errval_t err = SYS_ERR_OK;
+    struct mmnode *nm = slab_alloc(&(mm->slabs)); // must be called before choosing cm!!!
+    // LOCK NM
     if (mm == NULL) {
-        return LIB_ERR_SHOULD_NOT_GET_HERE;
+        DEBUG_ERR(MM_ERR_NOT_FOUND, "mm.c/mm_alloc_aligned: mm is null");
+        return MM_ERR_NOT_FOUND;
     }
-    // TODO: find out what alignment is used for -> split in three parts with the alignment?
 
-    // Search free matching node
-    struct mmnode *cm;
-    for (cm = mm->head; cm != NULL && (cm->type != NodeType_Free || cm->size < size); cm = cm->next);
-
+    // Handle alignment
+    struct mmnode *cm = mm->head;
+    size_t offset = (alignment - ((cm->base)%alignment))%alignment;
+    // Search free matching (large enough) node
+    for (; cm != NULL && (cm->type != NodeType_Free || (cm->size - offset) < size); cm = cm->next) {
+        offset = (alignment - ((cm->base)%alignment))%alignment;
+    }
+    // LOCK CM
     if (cm == NULL) {
-        debug_printf("\nmm_alloc_aligned: cm is null\n");
-        return MM_ERR_SLOT_MM_ALLOC;
-    }
-
-    static bool isrefill = false;
-    if (!isrefill && slab_freecount(&(mm->slabs)) < 6) {
-        isrefill = true;
-        debug_printf("\nenter: %zu\n", slab_freecount(&(mm->slabs)));
-        slab_default_refill(&(mm->slabs));
-        debug_printf("\nleave: %zu\n", slab_freecount(&(mm->slabs)));
-        isrefill = false;
+        DEBUG_ERR(MM_ERR_FIND_NODE, "mm_alloc_aligned: cm is null -> no large enough mmnode found\n");
+        return MM_ERR_FIND_NODE;
     }
 
     // Node fragmentation
-    struct mmnode* mmnode_new = slab_alloc(&(mm->slabs));
-    mmnode_new->type = NodeType_Allocated;
-    mmnode_new->cap = cm->cap;
-    mmnode_new->prev = cm->prev;
-    mmnode_new->next = cm;
-    mmnode_new->base = cm->base;
-    mmnode_new->size = (gensize_t) size;
+    if (offset != 0) {
+        mmnode_split(cm, nm, offset);
+        // UNLOCK NM + CM
+        return mm_alloc_aligned(mm, size, alignment, retcap);
+    }
 
-    cm->size = cm->size - (gensize_t) size;
-    cm->base = cm->base + (gensize_t) size;
-    cm->prev = mmnode_new;
+    mmnode_split(cm, nm, size);
+    cm->type = NodeType_Allocated;
+    // UNLOCK CM + NM
 
     // Cap fragmentation
     assert(retcap != NULL);
     mm->slot_alloc(mm->slot_alloc_inst, 1, retcap);
-    errval_t err = cap_retype(*retcap, cm->cap.cap, mmnode_new->base - cm->cap.base, mm->objtype, (gensize_t) size, 1);
 
+    debug_printf("CAP_RETYPING: %lx, %lx\n", (cm->base)-(cm->cap.base), (cm->base)-(cm->cap.base)+size);
+    err = cap_retype(*retcap, cm->cap.cap, (cm->base)-(cm->cap.base), mm->objtype, (gensize_t) size, 1);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "mm_alloc_aligned: cap_retype");
-        return SYS_ERR_RETYPE_CREATE;
+        DEBUG_ERR(err, "mm.c/mm_alloc_aligned: cap_retype");
+        return err_push(err, SYS_ERR_RETYPE_CREATE);
     }
-    return SYS_ERR_OK;
+    return err;
 }
 
 errval_t mm_alloc(struct mm *mm, size_t size, struct capref *retcap)
 {
     return mm_alloc_aligned(mm, size, BASE_PAGE_SIZE, retcap);
+}
+
+/**
+ * \brief Helper function: Merge free node with its free successor
+ *
+ * \param mm Pointer to MM allocator instance data
+ * \param mmnode Pointer to the mmnode
+ */
+static void successor_merge(struct mm *mm, struct mmnode *mmnode)
+{
+    if (mmnode != NULL && mmnode->next != NULL && mmnode->type == NodeType_Free && mmnode->next->type == NodeType_Free && capcmp(mmnode->cap.cap, mmnode->next->cap.cap)) {
+        mmnode->size = mmnode->size + mmnode->next->size;
+        if (mmnode->next->next != NULL) {
+            mmnode->next = mmnode->next->next;
+            slab_free(&(mm->slabs), mmnode->next->prev);
+            mmnode->next->prev = mmnode;
+        } else {
+            slab_free(&(mm->slabs), mmnode->next);
+            mmnode->next = NULL;
+        }
+    }
 }
 
 /**
@@ -167,12 +225,13 @@ errval_t mm_alloc(struct mm *mm, size_t size, struct capref *retcap)
 errval_t mm_free(struct mm *mm, struct capref cap, genpaddr_t base, gensize_t size)
 {
     // Find the node on that address
+    errval_t err = SYS_ERR_OK;
     struct mmnode *cm;
     for (cm = mm->head; cm != NULL && cm->base != base; cm = cm->next);
 
-    // Handle error if the node is not found on that address
     if (cm == NULL) {
-        return MM_ERR_MM_FREE;
+        DEBUG_ERR(MM_ERR_NOT_FOUND, "mm.c/mm_free: mm is null");
+        return MM_ERR_NOT_FOUND;
     }
 
     // Free node
@@ -180,35 +239,14 @@ errval_t mm_free(struct mm *mm, struct capref cap, genpaddr_t base, gensize_t si
     cm->type = NodeType_Free;
 
     // Fusion with possible free predecessor
-    if (cm->prev != NULL && cm->prev->type == NodeType_Free) {
-        cm->size = cm->size + cm->prev->size;
-        if (cm->prev->prev != NULL) {
-            cm->prev = cm->prev->prev;
-            slab_free(&(mm->slabs), cm->prev->next);
-            cm->prev->next = cm;
-        } else {
-            slab_free(&(mm->slabs), cm->prev);
-            cm->prev = NULL;
-        }
-    }
+    successor_merge(mm, cm);
+    successor_merge(mm, cm->prev);
 
-    // Fusion with possible free successor
-    if (cm->next != NULL && cm->next->type == NodeType_Free) {
-        cm->size = cm->size + cm->next->size;
-        if (cm->next->next != NULL) {
-            cm->next = cm->next->next;
-            slab_free(&(mm->slabs), cm->next->prev);
-            cm->next->prev = cm;
-        } else {
-            slab_free(&(mm->slabs), cm->next);
-            cm->next = NULL;
-        }
-    }
-
-    errval_t err = cap_destroy(cap);
+    //debug_printf("FREERETYPING: %lx, %lx\n", base-(cm->cap.base), base-(cm->cap.base)+size);
+    err = cap_destroy(cap);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "mm_alloc_aligned: cap_destroy");
-        return LIB_ERR_CAP_DESTROY;
+        DEBUG_ERR(err, "mm.c/mm_alloc_aligned: cap_destroy");
+        return err_push(err, LIB_ERR_CAP_DESTROY);
     }
-    return SYS_ERR_OK;
+    return err;
 }

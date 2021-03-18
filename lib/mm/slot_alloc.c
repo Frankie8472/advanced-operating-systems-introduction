@@ -44,7 +44,6 @@ errval_t slot_prealloc_refill(void *this)
     struct capref ram_cap;
     err = mm_alloc(sa->mm, OBJSIZE_L2CNODE, &ram_cap);
     if (err_is_fail(err)) {
-        is_refilling = false;
         err = err_push(err, MM_ERR_SLOT_MM_ALLOC);
         goto out;
     }
