@@ -179,7 +179,7 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment, struct c
     assert(retcap != NULL);
     mm->slot_alloc(mm->slot_alloc_inst, 1, retcap);
 
-    debug_printf("CAP_RETYPING: %lx, %lx\n", (cm->base)-(cm->cap.base), (cm->base)-(cm->cap.base)+size);
+    //debug_printf("CAP_RETYPING: %lx, %lx\n", (cm->base)-(cm->cap.base), (cm->base)-(cm->cap.base)+size);
     err = cap_retype(*retcap, cm->cap.cap, (cm->base)-(cm->cap.base), mm->objtype, (gensize_t) size, 1);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "mm.c/mm_alloc_aligned: cap_retype");

@@ -35,41 +35,48 @@ coreid_t my_core_id;
 
 static void test(void) {
     debug_printf("== START Testing ==\n");
-    size_t l = 60;
+    size_t l = 1024;
     struct capref cap[l];
 
-    debug_printf("== Test Start: Allocate capabilities + freeing ==\n");
     for (int i= 0; i < l; i++) {
-        debug_printf("== %d\n", i);
+        //debug_printf("== %d\n", i);
         ram_alloc_aligned(&cap[i], 4096, 1);
     }
+    debug_printf(">> Allocate capabilities (4096, 1): OK \n");
+
 
     for (int i= 0; i < l; i++) {
-        debug_printf("== %d\n", i);
+        //debug_printf("== %d\n", i);
         aos_ram_free(cap[i]);
     }
-
-    debug_printf("== Test End: Allocate capabilities + freeing ==\n");
-    debug_printf("== Test Start: Re-Allocate capabilities + freeing fusion ==\n");
+    debug_printf(">> Freeing capabilities (4096, 1): OK \n");
 
     for (int i= 0; i < l; i++) {
-        ram_alloc_aligned(&cap[i], 4096, 1);
+        ram_alloc_aligned(&cap[i], 8192, 2);
     }
+    debug_printf(">> Allocate capabilities (8192, 2): OK \n");
 
-    for (int i = 0; i < 256; i+=42) {
+    for (int i = 0; i < l/4; i+=4) {
         aos_ram_free(cap[i]);
         aos_ram_free(cap[i+1]);
         aos_ram_free(cap[i+2]);
+        aos_ram_free(cap[i+3]);
     }
+    debug_printf(">> Freeing capabilities (8192, 2): OK \n");
 
-    debug_printf("== Test End: Re-Allocate capabilities + freeing fusion ==\n");
-    debug_printf("== Test Start: Frame allocation to do some math! ==\n");
 
     struct capref frame;
     size_t size;
     frame_alloc(&frame, 4096, &size);
+
+    debug_printf(">> Frame allocating (4096, %zu): OK \n", size);
+
+
     lvaddr_t addr = VADDR_OFFSET + 0x100000;
     paging_map_fixed_attr(get_current_paging_state(), addr, frame, 4096, VREGION_FLAGS_READ_WRITE);
+
+    debug_printf(">> Assign VA to frame: OK \n");
+
 
     int64_t * var = (int64_t *) addr;
 
@@ -80,7 +87,7 @@ static void test(void) {
     for (int i = 0; i < 512; i+=2) {
         var[i] += var[i+1]; // 512 int64
     }
-    debug_printf("== Test End: Frame allocation to do some math! ==\n");
+    debug_printf(">> Calculations on allocated space: OK \n");
     debug_printf("== END Testing ==\n");
 }
 
