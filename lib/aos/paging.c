@@ -23,8 +23,6 @@
 
 static struct paging_state current;
 
-
-
 /**
  * \brief Helper function that allocates a slot and
  *        creates a aarch64 page table capability for a certain level
@@ -292,8 +290,7 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
      * TODO(M2): General case
      */
 
-    // TODO: move to init? probably not, look for the call sequence!
-    //       when is slot_allocator init called?
+
     if (st->slot_alloc == NULL) {
         st->slot_alloc = get_default_slot_allocator();
     }
@@ -303,47 +300,70 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
 
     // Get index
     capaddr_t lvidx[4];
+
     for (int i = 0; i < 4; i++) {
         lvidx[i] = (capaddr_t)((vaddr >> (39-9*i)) & 0x1ff);
     }
 
-    // Map
-    struct capref map_l[4];
-    for (int i = 0; i < 4; i++){
-        err = slot_alloc(&map_l[i]);
-        if (err_is_fail(err)) {
-            DEBUG_ERR(err, "paging.c/paging_map_fixed_attr: slot_alloc of map_l%d fail", i);
-            return err;
-        }
-    }
-
-    // Get pt level 0-3 capabilities
-    static struct capref pt_l[4];
-    errval_t (*pt_alloc_l[3])(struct paging_state * st, struct capref *ret) = {&pt_alloc_l1, &pt_alloc_l2, &pt_alloc_l3};
-
     if (init) {
-        pt_l[0] = (struct capref) { // 512 entries
+        st->shadow_pt.s_pt_cap_root = (struct capref) { // 512 entries
                 .cnode = cnode_page,
                 .slot  = 0
         };
+        slab_init(&(st->slabs), sizeof(struct shadow_pt), NULL);
+        static uint8_t nodebuf[SLAB_STATIC_SIZE(64, sizeof(struct shadow_pt))];
+        slab_grow(&st->slabs, nodebuf, sizeof(nodebuf));
+        init = false;
+    }
 
-        for (int i = 1; i < 4; i++) {
-            err = pt_alloc_l[i-1](st, &pt_l[i]);
+    struct shadow_pt *shadow_pt_l[4] = {&(st->shadow_pt), NULL, NULL, NULL};
+    errval_t (*pt_alloc_l[3])(struct paging_state * st, struct capref *ret) = {&pt_alloc_l1, &pt_alloc_l2, &pt_alloc_l3};
+
+    for (int i = 1; i < 4; i++) {
+        shadow_pt_l[i] = shadow_pt_l[i-1]->s_pt_entries[lvidx[i-1]];
+        if (shadow_pt_l[i] == NULL) {
+            // Allocate s_pt struct
+            shadow_pt_l[i] = slab_alloc(&(st->slabs));
+            if (shadow_pt_l[i] == NULL) {
+                DEBUG_ERR(err, "paging.c/paging_map_fixed_attr: slab alloc failed for shadow_pt_l[%d]", i);
+                return err;
+            }
+            shadow_pt_l[i-1]->s_pt_entries[lvidx[i-1]] = shadow_pt_l[i];
+            // Allocate pt_capref
+            err = pt_alloc_l[i-1](st, &(shadow_pt_l[i]->s_pt_cap_root));
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "paging.c/paging_map_fixed_attr: pt_alloc_l%d fail", i);
                 return err;
             }
-            err = vnode_map(pt_l[i-1], pt_l[i], lvidx[i-1], flags, 0, 1, map_l[i-1]);
+
+            // Allocate map_capref l0-2
+            err = slot_alloc(&(shadow_pt_l[i-1]->s_pt_cap_map[lvidx[i-1]]));
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "paging.c/paging_map_fixed_attr: slot_alloc of map_l%d fail", i-1);
+                return err;
+            }
+
+            // Write map_capref for writing pt_i in pt_i-1
+            err = vnode_map(shadow_pt_l[i-1]->s_pt_cap_root, shadow_pt_l[i]->s_pt_cap_root, lvidx[i-1], flags, 0, 1, shadow_pt_l[i-1]->s_pt_cap_map[lvidx[i-1]]);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "paging.c/paging_map_fixed_attr: vnode_map of lv%didx fail", i-1);
                 return err_push(err, LIB_ERR_VNODE_MAP);
             }
-
         }
-        init = false;
     }
 
-    err = vnode_map(pt_l[3], frame, lvidx[3], flags, 0, 1, map_l[3]);
+    // Allocate map_capref l3
+    err = slot_alloc(&(shadow_pt_l[3]->s_pt_cap_map[lvidx[3]]));
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "paging.c/paging_map_fixed_attr: slot_alloc of map_l%d fail", 3);
+        return err;
+    }
+
+    static int i = 0;
+    debug_printf(" ====== %d\n ", i++);
+
+    // Write map_capref for writing frame in pt_3
+    err = vnode_map(shadow_pt_l[3]->s_pt_cap_root, frame, lvidx[3], flags, 0, 1, shadow_pt_l[3]->s_pt_cap_map[lvidx[3]]);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "paging_map_fixed_attr: vnode_map of lv%didx fail", 3);
         return err_push(err, LIB_ERR_VNODE_MAP);

@@ -38,6 +38,7 @@ void slab_init(struct slab_allocator *slabs, size_t blocksize,
     slabs->slabs = NULL;
     slabs->blocksize = SLAB_REAL_BLOCKSIZE(blocksize);
     slabs->refill_func = refill_func;
+    slabs->is_refilling = false;
 }
 
 
@@ -191,13 +192,12 @@ size_t slab_freecount(struct slab_allocator *slabs)
 static errval_t slab_refill_pages(struct slab_allocator *slabs, size_t bytes)
 {
     errval_t err = SYS_ERR_OK;
-    static bool is_refilling = false;
 
-    if (is_refilling) {
+    if (slabs->is_refilling) {
         return err;
     }
 
-    is_refilling = true;
+    slabs->is_refilling = true;
 
     struct capref frame;
     static lvaddr_t vaddr = (VADDR_OFFSET + 0x42000);   // Arbitrary address
@@ -218,7 +218,7 @@ static errval_t slab_refill_pages(struct slab_allocator *slabs, size_t bytes)
     vaddr += 0x1000;     // Next entry in pt_l3
 
 out:
-    is_refilling = false;
+    slabs->is_refilling = false;
     return err;
 }
 

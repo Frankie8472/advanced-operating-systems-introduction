@@ -46,10 +46,17 @@ struct paging_region {
     // TODO: if needed add struct members for tracking state
 };
 
+struct shadow_pt {
+    struct capref s_pt_cap_root;
+    struct capref s_pt_cap_map[PTABLE_ENTRIES];
+    struct shadow_pt *s_pt_entries[PTABLE_ENTRIES];
+};
 
 // struct to store the paging status of a process
 struct paging_state {
     struct slot_allocator *slot_alloc;
+    struct shadow_pt shadow_pt;
+    struct slab_allocator slabs;
 };
 
 

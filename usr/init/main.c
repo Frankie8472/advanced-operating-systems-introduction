@@ -35,7 +35,7 @@ coreid_t my_core_id;
 
 static void test(void) {
     debug_printf("== START Testing ==\n");
-    size_t l = 1024;
+    size_t l = 3;
     struct capref cap[l];
 
     for (int i= 0; i < l; i++) {
@@ -76,7 +76,7 @@ static void test(void) {
 
     debug_printf(">> Assign one VA to one frame: OK \n");
 
-    l= 30; // No returns on > 30, investigate!
+    l = 49; // No returns on > 30, investigate!
     struct capref frames[l];
     for (int i = 0; i < l; i++) {
         frame_alloc(&frames[i], 4096, &size);
