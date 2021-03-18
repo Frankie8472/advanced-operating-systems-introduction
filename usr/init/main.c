@@ -71,12 +71,19 @@ static void test(void) {
 
     debug_printf(">> Frame allocating (4096, %zu): OK \n", size);
 
-
-    lvaddr_t addr = VADDR_OFFSET + 0x100000;
+    lvaddr_t addr = VADDR_OFFSET + 0x10000;
     paging_map_fixed_attr(get_current_paging_state(), addr, frame, 4096, VREGION_FLAGS_READ_WRITE);
 
-    debug_printf(">> Assign VA to frame: OK \n");
+    debug_printf(">> Assign one VA to one frame: OK \n");
 
+    l= 30; // No returns on > 30, investigate!
+    struct capref frames[l];
+    for (int i = 0; i < l; i++) {
+        frame_alloc(&frames[i], 4096, &size);
+        paging_map_fixed_attr(get_current_paging_state(), VADDR_OFFSET + 0x10000 + 0x1000*(i+1), frames[i], 4096, VREGION_FLAGS_READ_WRITE);
+    }
+    debug_printf(">> Multi Frame allocating (4096, %zu): OK \n", size);
+    debug_printf(">> Multi Assign one VA to one frame: OK \n");
 
     int64_t * var = (int64_t *) addr;
 
