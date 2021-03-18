@@ -32,6 +32,38 @@ struct bootinfo *bi;
 
 coreid_t my_core_id;
 
+static void test2(void){
+
+    printf("== START Testing ==\n");
+    size_t l = 10;
+    struct capref cap[l];
+
+    printf("== Test Start: Allocate capabilities + freeing ==\n");
+    for (int i= 0; i < l; i++) {
+        printf("== %d\n", i);
+        ram_alloc_aligned(&cap[i], 4096, 1);
+    }
+
+    for (int i= 0; i < l; i++) {
+        printf("== %d\n", i);
+        aos_ram_free(cap[i]);
+    }
+
+    size_t k = 20;
+    struct capref cap2[k];
+    for (int i= 0; i < k; i++) {
+        printf("== %d\n", i);
+        ram_alloc_aligned(&cap2[k], 8192, 1);
+    }
+
+    for (int i= 0; i < k; i++) {
+        printf("== %d\n", i);
+        aos_ram_free(cap2[k]);
+    }
+
+    printf("== Test End: Allocate capabilities + freeing ==\n");
+}
+
 
 static void test(void) {
     debug_printf("== START Testing ==\n");
@@ -71,19 +103,21 @@ static void test(void) {
 
     debug_printf(">> Frame allocating (4096, %zu): OK \n", size);
 
-    lvaddr_t addr = VADDR_OFFSET + 0x10000;
+    lvaddr_t addr = VADDR_OFFSET + 0x1000000;
     paging_map_fixed_attr(get_current_paging_state(), addr, frame, 4096, VREGION_FLAGS_READ_WRITE);
 
     debug_printf(">> Assign one VA to one frame: OK \n");
 
-    l = 49; // No returns on > 30, investigate!
+    l = 1000; // No returns on > 30, investigate!
     struct capref frames[l];
     for (int i = 0; i < l; i++) {
         frame_alloc(&frames[i], 4096, &size);
-        paging_map_fixed_attr(get_current_paging_state(), VADDR_OFFSET + 0x10000 + 0x1000*(i+1), frames[i], 4096, VREGION_FLAGS_READ_WRITE);
+        paging_map_fixed_attr(get_current_paging_state(), VADDR_OFFSET + 0x1000000 + 0x1000*(i+1), frames[i], 4096, VREGION_FLAGS_READ_WRITE);
     }
     debug_printf(">> Multi Frame allocating (4096, %zu): OK \n", size);
     debug_printf(">> Multi Assign one VA to one frame: OK \n");
+
+
 
     int64_t * var = (int64_t *) addr;
 
@@ -119,7 +153,7 @@ bsp_main(int argc, char *argv[])
     // TODO: initialize mem allocator, vspace management here
 
     test();
-
+    if (false) test2();
     // Grading 
     grading_test_early();
 

@@ -144,6 +144,7 @@ errval_t two_level_free(struct slot_allocator *ca, struct capref cap)
     struct multi_slot_allocator *mca = (struct multi_slot_allocator*)ca;
     struct slot_allocator_list *walk = mca->head;
 
+    // TODO: infinite loop?
     while(walk != NULL) {
         err = walk->a.a.free(&walk->a.a, cap);
         if (err_is_ok(err)) {

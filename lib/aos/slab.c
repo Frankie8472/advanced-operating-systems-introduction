@@ -200,7 +200,7 @@ static errval_t slab_refill_pages(struct slab_allocator *slabs, size_t bytes)
     slabs->is_refilling = true;
 
     struct capref frame;
-    static lvaddr_t vaddr = (VADDR_OFFSET + 0x42000);   // Arbitrary address
+    static lvaddr_t vaddr = (VADDR_OFFSET + 0x1000);   // Arbitrary address
 
     err = frame_alloc(&frame, bytes, &bytes);
     if (err_is_fail(err)) {

@@ -185,6 +185,17 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment, struct c
         DEBUG_ERR(err, "mm.c/mm_alloc_aligned: cap_retype");
         return err_push(err, SYS_ERR_RETYPE_CREATE);
     }
+
+    static bool init = true;
+    if (init) {
+        errval_t alloc(void *inst, uint64_t i, struct capref *cap) {
+            return ((struct multi_slot_allocator *) inst)->a.alloc(inst, cap);
+        }
+        mm->slot_alloc_inst = get_default_slot_allocator();
+        mm->slot_alloc = alloc;
+        init = false;
+    }
+
     return err;
 }
 

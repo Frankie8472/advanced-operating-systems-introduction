@@ -352,6 +352,7 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
         }
     }
 
+    // TODO: BUG does not work after 122 uses.
     // Allocate map_capref l3
     err = slot_alloc(&(shadow_pt_l[3]->s_pt_cap_map[lvidx[3]]));
     if (err_is_fail(err)) {
@@ -359,8 +360,8 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
         return err;
     }
 
-    static int i = 0;
-    debug_printf(" ====== %d\n ", i++);
+    static int q = 0;
+    debug_printf(" ====== %d\n ", q++);
 
     // Write map_capref for writing frame in pt_3
     err = vnode_map(shadow_pt_l[3]->s_pt_cap_root, frame, lvidx[3], flags, 0, 1, shadow_pt_l[3]->s_pt_cap_map[lvidx[3]]);
